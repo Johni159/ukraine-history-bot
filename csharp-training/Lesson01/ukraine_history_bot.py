@@ -3,7 +3,7 @@ from telegram import Poll
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-TOKEN = '8309839168:AAGBeHH5N_UxbBGyOvgPReQHX433uVk52uA'
+TOKEN = '8309839168:AAH7L9h6q20gD0OHUnV3G-CHbnqjtxsyZI8'
 GROUP_ID = -5148918793
 
 questions = [
