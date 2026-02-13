@@ -46,10 +46,10 @@ async def test_command(update, context: ContextTypes.DEFAULT_TYPE):
 
 async def on_startup(application):
     scheduler = AsyncIOScheduler()
-    # Час — 22:09 (9 хвилин 22-ї години)
-    scheduler.add_job(send_polls, 'cron', hour=22, minute=32, args=[application])
+    # Час — 13:20 (20 хвилин 13-ї години)
+    scheduler.add_job(send_polls, 'cron', hour=13, minute=20, args=[application])
     scheduler.start()
-    print("Планувальник запущено, чекаємо 22:32...")
+    print("Планувальник запущено, чекаємо 13:20...")
 
 if __name__ == '__main__':  # Ось так правильно!
     import sys
