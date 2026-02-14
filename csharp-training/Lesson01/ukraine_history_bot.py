@@ -1,17 +1,31 @@
-
 import random
+import os
+import sys
+import asyncio
 from telegram import Poll, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from dotenv import load_dotenv
 
-from events import events  # Імпортуємо список подій
+# Завантажуємо змінні оточення
+load_dotenv()
 
-# Константи
-TOKEN = '8309839168:AAE3zO4AloXymKUC1i4fDao7DFdNXZfkBsI'
-GROUP_ID = -5148918793
+from events import events
+
+# Константи з .env файлу
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+GROUP_ID = int(os.getenv('GROUP_ID', '-5148918793'))
+
+if not TOKEN:
+    raise ValueError("❌ ПОМИЛКА: TELEGRAM_TOKEN не знайдено у .env файлі!")
 
 poll_queue = []
+
 def get_random_poll():
+    """
+    Отримує випадкове опитування з черги.
+    Якщо черга порожня, перемішує нову з усіх подій.
+    """
     global poll_queue
 
     if not events:
@@ -26,14 +40,23 @@ def get_random_poll():
 
     if event.get("type") == "year":
         correct_year = event["year"]
-        years_pool = list(set([e["year"] for e in events if e.get("type") == "year" and e["year"] != correct_year]))
+        # Отримуємо всі роки, крім поточного
+        years_pool = [
+            e["year"] for e in events 
+            if e.get("type") == "year" and e["year"] != correct_year
+        ]
+        # Видаляємо дублікати
+        years_pool = list(set(years_pool))
+        
         if len(years_pool) >= 3:
             wrong_years = random.sample(years_pool, 3)
         else:
+            # Якщо недостатньо років, генеруємо близькі значення
             wrong_years = [correct_year + 1, correct_year - 1, correct_year + 5]
 
         options = [correct_year] + wrong_years
         random.shuffle(options)
+        
         return {
             'question': f"У якому році відбулася подія: {event['event']}?",
             'options': [str(opt) for opt in options],
@@ -53,37 +76,71 @@ def get_random_poll():
 
 async def send_poll(application):
     """Задача для планувальника: відправка опитування"""
-    q = get_random_poll()
-    if q:
-        await application.bot.send_poll(
-            chat_id=GROUP_ID,
-            question=q['question'],
-            options=q['options'],
-            type=Poll.QUIZ,
-            correct_option_id=q['correct_option_id'],
-            is_anonymous=False
-        )
-    else:
-        print("⚠️ База подій порожня, опитування не відправлено.")
+    try:
+        q = get_random_poll()
+        if q:
+            await application.bot.send_poll(
+                chat_id=GROUP_ID,
+                question=q['question'],
+                options=q['options'],
+                type=Poll.QUIZ,
+                correct_option_id=q['correct_option_id'],
+                is_anonymous=False
+            )
+            print(f"✅ Опитування відправлено: {q['question'][:50]}...")
+        else:
+            print("⚠️ База подій порожня, опитування не відправлено.")
+    except Exception as e:
+        print(f"❌ Помилка при відправленні опитування: {e}")
 
-# Команда для перевірки роботи бота
+
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Бот працює!")
+    """Команда /test для перевірки роботи бота"""
+    try:
+        q = get_random_poll()
+        if q:
+            await context.bot.send_poll(
+                chat_id=update.effective_chat.id,
+                question=q['question'],
+                options=q['options'],
+                type=Poll.QUIZ,
+                correct_option_id=q['correct_option_id'],
+                is_anonymous=False
+            )
+        else:
+            await update.message.reply_text("⚠️ База подій порожня!")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Помилка: {e}")
 
-# Функція, яка запускає планувальник
+
 async def on_startup(application):
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_poll, "interval", minutes=5, args=[application])
-    scheduler.start()
-    print("Планувальник запущено!")
+    """Функція, яка запускає планувальник при старті бота"""
+    try:
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(send_poll, "interval", minutes=5, args=[application])
+        scheduler.start()
+        print("✅ Планувальник запущено! Опитування кожні 5 хвилин.")
+    except Exception as e:
+        print(f"❌ Помилка при запуску планувальника: {e}")
 
-if __name__ == '__main__':  # Ось тут була помилка, має бути __name__ == '__main__'
-    import sys
+
+def main():
+    """Головна функція"""
     if sys.platform.startswith('win'):
-        import asyncio
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    print("Бот стартує!")
+    
+    print("🚀 Бот стартує!")
+    print(f"📁 Завантаження подій з events.py...")
+    print(f"📊 Кількість подій: {len(events)}")
+    
     application = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
     application.add_handler(CommandHandler("test", test_command))
-    print("Завантаження подій з events.py...")
+    
+    print("✅ Обробники команд завантажені")
+    print("📡 Бот слухає повідомлення...\n")
+    
     application.run_polling()
+
+
+if __name__ == '__main__':
+    main()
