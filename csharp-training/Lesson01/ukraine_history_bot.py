@@ -21,6 +21,15 @@ if not TOKEN:
 
 poll_queue = []
 
+def shuffle_fact_options(events):
+    import random
+    for event in events:
+        if event.get("type") == "fact":
+            correct_answer = event["options"][event["correct_option_id"]]
+            random.shuffle(event["options"])
+            event["correct_option_id"] = event["options"].index(correct_answer)
+
+
 def get_random_poll():
     """
     Отримує випадкове опитування з черги.
@@ -45,13 +54,11 @@ def get_random_poll():
             e["year"] for e in events 
             if e.get("type") == "year" and e["year"] != correct_year
         ]
-        # Видаляємо дублікати
         years_pool = list(set(years_pool))
         
         if len(years_pool) >= 3:
             wrong_years = random.sample(years_pool, 3)
         else:
-            # Якщо недостатньо років, генеруємо близькі значення
             wrong_years = [correct_year + 1, correct_year - 1, correct_year + 5]
 
         options = [correct_year] + wrong_years
@@ -64,12 +71,16 @@ def get_random_poll():
         }
 
     elif event.get("type") == "fact":
+        # --- Додаємо перемішування варіантів ---
+        options = event["options"].copy()
+        correct_answer = options[event["correct_option_id"]]
+        random.shuffle(options)
+        correct_option_id = options.index(correct_answer)
         return {
             'question': event["question"],
-            'options': event["options"],
-            'correct_option_id': event["correct_option_id"]
+            'options': options,
+            'correct_option_id': correct_option_id
         }
-
     else:
         return None
 
@@ -132,6 +143,8 @@ def main():
     print("🚀 Бот стартує!")
     print(f"📁 Завантаження подій з events.py...")
     print(f"📊 Кількість подій: {len(events)}")
+
+    shuffle_fact_options(events)
     
     application = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
     application.add_handler(CommandHandler("test", test_command))
