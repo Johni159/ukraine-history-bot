@@ -4,58 +4,47 @@ import sys
 import asyncio
 from telegram import Poll, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 
 # Завантажуємо змінні оточення
 load_dotenv()
 
-from events import events
+# Імпортуємо базу подій (переконайся, що файл events.py лежить поруч)
+try:
+    from events import events
+except ImportError:
+    print("❌ ПОМИЛКА: Файл events.py не знайдено!")
+    events = []
 
-# Константи з .env файлу
+# Конфігурація з .env
 TOKEN = os.getenv('TELEGRAM_TOKEN')
-GROUP_ID = int(os.getenv('GROUP_ID', '-5148918793'))
+CHANNEL_ID = os.getenv('CHANNEL_ID', '@your_channel_username')  # Безпечний плейсхолдер
 
 if not TOKEN:
     raise ValueError("❌ ПОМИЛКА: TELEGRAM_TOKEN не знайдено у .env файлі!")
 
 poll_queue = []
 
-def shuffle_fact_options(events):
-    import random
-    for event in events:
-        if event.get("type") == "fact":
-            correct_answer = event["options"][event["correct_option_id"]]
-            random.shuffle(event["options"])
-            event["correct_option_id"] = event["options"].index(correct_answer)
-
-
 def get_random_poll():
-    """
-    Отримує випадкове опитування з черги.
-    Якщо черга порожня, перемішує нову з усіх подій.
-    """
     global poll_queue
 
     if not events:
         return None
 
-    # Якщо черга пуста — перемішуємо нову
     if not poll_queue:
         poll_queue = events.copy()
         random.shuffle(poll_queue)
 
     event = poll_queue.pop()
 
-    if event.get("type") == "year":
+    # Якщо це питання про рік (є ключі "event" та "year")
+    if "event" in event and "year" in event:
         correct_year = event["year"]
-        # Отримуємо всі роки, крім поточного
         years_pool = [
-            e["year"] for e in events 
-            if e.get("type") == "year" and e["year"] != correct_year
+            e["year"] for e in events
+            if "year" in e and e["year"] != correct_year
         ]
         years_pool = list(set(years_pool))
-        
         if len(years_pool) >= 3:
             wrong_years = random.sample(years_pool, 3)
         else:
@@ -63,15 +52,14 @@ def get_random_poll():
 
         options = [correct_year] + wrong_years
         random.shuffle(options)
-        
         return {
             'question': f"У якому році відбулася подія: {event['event']}?",
             'options': [str(opt) for opt in options],
             'correct_option_id': options.index(correct_year)
         }
 
-    elif event.get("type") == "fact":
-        # --- Додаємо перемішування варіантів ---
+    # Якщо це факт (є ключі "question", "options", "correct_option_id")
+    elif all(k in event for k in ("question", "options", "correct_option_id")):
         options = event["options"].copy()
         correct_answer = options[event["correct_option_id"]]
         random.shuffle(options)
@@ -81,32 +69,32 @@ def get_random_poll():
             'options': options,
             'correct_option_id': correct_option_id
         }
-    else:
-        return None
+
+    return None
 
 
-async def send_poll(application):
-    """Задача для планувальника: відправка опитування"""
+async def send_poll_job(context: ContextTypes.DEFAULT_TYPE):
+    """Задача для вбудованого JobQueue: автоматична відправка опитування"""
     try:
         q = get_random_poll()
         if q:
-            await application.bot.send_poll(
-                chat_id=GROUP_ID,
+            await context.bot.send_poll(
+                chat_id=CHANNEL_ID,
                 question=q['question'],
                 options=q['options'],
                 type=Poll.QUIZ,
                 correct_option_id=q['correct_option_id'],
-                is_anonymous=False
+                is_anonymous=True
             )
-            print(f"✅ Опитування відправлено: {q['question'][:50]}...")
+            print(f"✅ Авто-опитування відправлено: {q['question'][:50]}...")
         else:
-            print("⚠️ База подій порожня, опитування не відправлено.")
+            print("⚠️ База подій порожня.")
     except Exception as e:
-        print(f"❌ Помилка при відправленні опитування: {e}")
+        print(f"❌ Помилка при авто-відправленні: {e}")
 
 
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /test для перевірки роботи бота"""
+    """Команда /test для ручної перевірки"""
     try:
         q = get_random_poll()
         if q:
@@ -124,33 +112,25 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Помилка: {e}")
 
 
-async def on_startup(application):
-    """Функція, яка запускає планувальник при старті бота"""
-    try:
-        scheduler = AsyncIOScheduler()
-        scheduler.add_job(send_poll, "interval", minutes=5, args=[application])
-        scheduler.start()
-        print("✅ Планувальник запущено! Опитування кожні 5 хвилин.")
-    except Exception as e:
-        print(f"❌ Помилка при запуску планувальника: {e}")
-
-
 def main():
-    """Головна функція"""
+    """Головна функція запуску"""
     if sys.platform.startswith('win'):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
-    print("🚀 Бот стартує!")
-    print(f"📁 Завантаження подій з events.py...")
-    print(f"📊 Кількість подій: {len(events)}")
+    print("🚀 Бот стартує...")
+    print(f"📊 Завантажено подій: {len(events)}")
 
-    shuffle_fact_options(events)
+    # Створюємо додаток (включає підтримку job_queue за замовчуванням)
+    application = ApplicationBuilder().token(TOKEN).build()
     
-    application = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
+    # Реєструємо планувальник на базі JobQueue (кожні 5 хвилин = 300 сек)
+    job_queue = application.job_queue
+    job_queue.run_repeating(send_poll_job, interval=300, first=10)
+    print("📅 Автоматичні публікації налаштовано (кожні 5 хв)")
+
+    # Реєструємо команду /test
     application.add_handler(CommandHandler("test", test_command))
-    
-    print("✅ Обробники команд завантажені")
-    print("📡 Бот слухає повідомлення...\n")
+    print("📡 Бот запущений та готовий до роботи.")
     
     application.run_polling()
 
