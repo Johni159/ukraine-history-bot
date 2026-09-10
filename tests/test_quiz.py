@@ -1,15 +1,21 @@
 import importlib.util
+import sys
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).parents[1] / "csharp-training" / "Lesson01" / "ukraine_history_bot.py"
+MODULE_DIR = Path(__file__).parents[1] / "csharp-training" / "Lesson01"
+MODULE_PATH = MODULE_DIR / "ukraine_history_bot.py"
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("ukraine_history_bot", MODULE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    sys.path.insert(0, str(MODULE_DIR))
+    try:
+        spec = importlib.util.spec_from_file_location("ukraine_history_bot", MODULE_PATH)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.pop(0)
 
 
 def test_quiz_generation(monkeypatch):
@@ -28,6 +34,7 @@ def test_quiz_generation(monkeypatch):
 
 def test_quiz_has_correct_option(monkeypatch):
     monkeypatch.setenv("TELEGRAM_TOKEN", "test-token")
+    monkeypatch.setenv("CHANNEL_ID", "@test-channel")
     module = load_module()
 
     quiz = module.get_random_poll()
