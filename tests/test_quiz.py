@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 
-MODULE_DIR = Path(__file__).parents[1] / "csharp-training" / "Lesson01"
+MODULE_DIR = Path(__file__).parents[1]
 MODULE_PATH = MODULE_DIR / "ukraine_history_bot.py"
 
 
